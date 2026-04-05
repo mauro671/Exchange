@@ -3,21 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Smart Quant Portfolio</title>
+<title>Zero Fail Portfolio</title>
 
 <style>
 body{
     margin:0;
     font-family:monospace;
-    background:#060b16;
+    background:#050914;
     color:#d1d5db;
 }
 
-.container{
-    max-width:1000px;
-    margin:auto;
-    padding:20px;
-}
+.container{max-width:1000px;margin:auto;padding:20px;}
 
 .card{
     background:#111827;
@@ -33,16 +29,9 @@ input,button{
     border:none;
 }
 
-button{
-    background:#2563eb;
-    color:white;
-    cursor:pointer;
-}
+button{background:#2563eb;color:white;cursor:pointer;}
 
-table{
-    width:100%;
-    border-collapse:collapse;
-}
+table{width:100%;border-collapse:collapse;}
 
 td,th{
     padding:6px;
@@ -69,7 +58,7 @@ td,th{
 
 <div class="container">
 
-<h2>🧠 SMART TICKER ENGINE PORTFOLIO</h2>
+<h2>🧠 ZERO FAIL PORTFOLIO</h2>
 
 <div class="card">
 <input id="s" placeholder="TICKER (ENI.MI)">
@@ -113,83 +102,92 @@ function log(msg){
     t.scrollTop = t.scrollHeight;
 }
 
-function normalize(symbol){
-    return symbol.toUpperCase().trim();
-}
-
+// =====================
+// SMART TICKER
+// =====================
 function variants(symbol){
-
-    let s = normalize(symbol);
-
-    let base = s;
-
-    // ENI.MI -> ENI
-    if(s.includes(".")){
-        base = s.split(".")[0];
-    }
-
-    return [
-        s,      // originale
-        base    // pulito
-    ];
+    const s = symbol.toUpperCase().trim();
+    const base = s.split(".")[0];
+    return [s, base];
 }
 
-async function fetchPrice(symbol){
+// =====================
+// DATA SOURCES
+// =====================
+async function yahoo(symbol){
+    try{
+        const url =
+        "https://api.allorigins.win/raw?url=" +
+        encodeURIComponent(
+            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`
+        );
 
-    const url = `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${API_KEY}`;
+        const r = await fetch(url);
+        const j = await r.json();
 
-    const r = await fetch(url);
-    const j = await r.json();
+        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
 
-    const p = parseFloat(j.close);
+        return (p && !isNaN(p)) ? p : null;
 
-    if(!p || isNaN(p)) return null;
-
-    return p;
+    }catch{
+        return null;
+    }
 }
 
 async function price(symbol){
 
     const vars = variants(symbol);
 
+    // 1. try variants
     for(let v of vars){
 
-        try{
-            log(`TRY ${v}`);
+        log(`TRY ${v}`);
 
-            const p = await fetchPrice(v);
+        let p = await yahoo(v);
 
-            if(p){
+        if(p){
 
-                log(`OK ${symbol} => ${v} = ${p}`);
+            cache[symbol] = {
+                p,
+                src:v,
+                t:Date.now()
+            };
 
-                cache[symbol] = {
-                    p,
-                    src:v,
-                    t:Date.now()
-                };
+            log(`OK ${symbol} => ${v} = ${p}`);
 
-                return {
-                    p,
-                    src:v,
-                    status:"green"
-                };
-            }
-
-        }catch(e){
-            log(`FAIL ${v}`);
+            return {
+                p,
+                src:v,
+                status:"green"
+            };
         }
     }
 
-    log(`NO DATA ${symbol}`);
+    // 2. cache fallback
+    if(cache[symbol]?.p){
+
+        log(`CACHE ${symbol} = ${cache[symbol].p}`);
+
+        return {
+            p:cache[symbol].p,
+            src:"cache",
+            status:"yellow"
+        };
+    }
+
+    // 3. hard fail
+    log(`FAIL ${symbol}`);
 
     return {
         p:0,
-        src:"none",
+        src:"error",
         status:"red"
     };
 }
 
+// =====================
+// PORTFOLIO
+// =====================
 async function add(){
 
     const s = document.getElementById("s").value;
@@ -204,9 +202,7 @@ async function add(){
     const res = await price(s);
 
     pf.push({
-        s,
-        q,
-        b,
+        s,q,b,
         p:res.p,
         src:res.src,
         status:res.status
@@ -269,7 +265,7 @@ function save(){
 }
 
 render();
-log("SMART ENGINE READY");
+log("SYSTEM READY");
 
 </script>
 
