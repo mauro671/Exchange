@@ -3,49 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quant Portfolio PRO</title>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<title>Portfolio Terminal</title>
 
 <style>
 body{
     margin:0;
-    font-family:system-ui;
-    background:#0b1220;
-    color:#e5e7eb;
+    font-family:monospace;
+    background:#05070f;
+    color:#cbd5e1;
 }
 
 .container{
-    max-width:1100px;
+    max-width:1000px;
     margin:auto;
     padding:20px;
 }
 
 .card{
-    background:#121a2b;
-    padding:15px;
-    border-radius:12px;
+    background:#0f172a;
+    padding:12px;
+    border-radius:10px;
     margin:10px 0;
 }
 
-.grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-    gap:10px;
-}
-
 input,button{
-    padding:10px;
+    padding:8px;
+    margin:4px;
+    border-radius:6px;
     border:none;
-    border-radius:8px;
-    margin:5px;
 }
 
-button{
-    background:#3b82f6;
-    color:white;
-    cursor:pointer;
-}
+button{background:#2563eb;color:white;cursor:pointer;}
 
 table{
     width:100%;
@@ -53,21 +41,22 @@ table{
 }
 
 td,th{
-    padding:8px;
+    padding:6px;
+    border-bottom:1px solid #1e293b;
     text-align:center;
-    border-bottom:1px solid #1f2a44;
 }
 
-.profit{color:#22c55e;}
-.loss{color:#ef4444;}
+.green{color:#22c55e;}
+.red{color:#ef4444;}
+.yellow{color:#eab308;}
 
-.toast{
-    position:fixed;
-    bottom:20px;
-    right:20px;
-    background:#111;
+.terminal{
+    background:black;
+    color:#22c55e;
     padding:10px;
-    border-radius:8px;
+    height:200px;
+    overflow:auto;
+    font-size:12px;
 }
 </style>
 </head>
@@ -76,39 +65,32 @@ td,th{
 
 <div class="container">
 
-<h2>📊 Quant Portfolio PRO</h2>
+<h2>🧠 TERMINAL MODE PORTFOLIO</h2>
 
 <div class="card">
-    <input id="s" placeholder="Ticker (ENI.MI)">
-    <input id="q" type="number" placeholder="Quantità">
-    <input id="b" type="number" placeholder="Prezzo acquisto">
-    <button onclick="add()">Aggiungi</button>
-</div>
-
-<div class="grid">
-    <div class="card" id="tot"></div>
-    <div class="card" id="pl"></div>
-    <div class="card" id="risk"></div>
-    <div class="card" id="cagr"></div>
+<input id="s" placeholder="TICKER">
+<input id="q" type="number" placeholder="QTA">
+<input id="b" type="number" placeholder="BUY">
+<button onclick="add()">ADD</button>
+<button onclick="manualUpdate()">REFRESH</button>
 </div>
 
 <div class="card">
-    <canvas id="equity"></canvas>
+<table>
+<thead>
+<tr>
+<th>ASSET</th>
+<th>PRICE</th>
+<th>P/L</th>
+<th>STATUS</th>
+</tr>
+</thead>
+<tbody id="tbl"></tbody>
+</table>
 </div>
 
 <div class="card">
-    <table>
-        <thead>
-            <tr>
-                <th>Ticker</th>
-                <th>Valore</th>
-                <th>P/L</th>
-                <th>%</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody id="tbl"></tbody>
-    </table>
+<div class="terminal" id="term"></div>
 </div>
 
 </div>
@@ -116,175 +98,117 @@ td,th{
 <script>
 
 let pf = JSON.parse(localStorage.getItem("pf")) || [];
-let hist = JSON.parse(localStorage.getItem("hist")) || [];
-let cache = {};
 
-async function price(symbol){
+function log(msg){
+    const t = document.getElementById("term");
+    const time = new Date().toLocaleTimeString();
+    t.innerHTML += `[${time}] ${msg}<br>`;
+    t.scrollTop = t.scrollHeight;
+}
+
+async function price(s){
 
     try{
-        // cache 60s
-        if(cache[symbol] && Date.now() - cache[symbol].t < 60000){
-            return cache[symbol].v;
+        log(`FETCH ${s}`);
+
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`;
+        const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
+
+        if(!r.ok){
+            log(`ERROR HTTP ${s}`);
+            return {p:0,status:"red"};
         }
 
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-        const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
         const j = await r.json();
+        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
 
-        let p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+        if(typeof p !== "number"){
+            log(`FALLBACK ${s}`);
+            return {p:0,status:"yellow"};
+        }
 
-        if(typeof p !== "number") p = 0;
-
-        cache[symbol] = {v:p, t:Date.now()};
-        return p;
+        log(`OK ${s} = ${p}`);
+        return {p,status:"green"};
 
     }catch(e){
-        console.log("price error", e);
-        return 0;
+        log(`FAIL ${s}`);
+        return {p:0,status:"red"};
     }
 }
 
 async function add(){
 
-    const sEl = document.getElementById("s");
-    const qEl = document.getElementById("q");
-    const bEl = document.getElementById("b");
-
-    const s = sEl.value.toUpperCase().trim();
-    const q = parseFloat(qEl.value);
-    const b = parseFloat(bEl.value);
+    const s = document.getElementById("s").value.toUpperCase();
+    const q = +document.getElementById("q").value;
+    const b = +document.getElementById("b").value;
 
     if(!s || !q || !b){
-        alert("Compila tutti i campi");
+        alert("compila tutto");
         return;
     }
 
-    let p = await price(s);
+    const res = await price(s);
 
-    if(!p) p = b;
-
-    pf.push({s,q,b,p});
-
-    sEl.value = "";
-    qEl.value = "";
-    bEl.value = "";
+    pf.push({
+        s,q,b,
+        p:res.p,
+        status:res.status
+    });
 
     save();
     render();
 }
 
-function save(){
-    localStorage.setItem("pf", JSON.stringify(pf));
-    localStorage.setItem("hist", JSON.stringify(hist));
-}
+async function manualUpdate(){
 
-function computeStats(series){
+    log("=== MANUAL REFRESH ===");
 
-    if(series.length < 2) return {vol:0, cagr:0};
+    for(let x of pf){
 
-    let returns = [];
-    for(let i=1;i<series.length;i++){
-        returns.push(Math.log(series[i]/series[i-1]));
+        const res = await price(x.s);
+
+        x.p = res.p;
+        x.status = res.status;
+
+        log(`${x.s} -> ${res.p} (${res.status})`);
     }
 
-    let avg = returns.reduce((a,b)=>a+b,0)/returns.length;
-    let variance = returns.reduce((a,b)=>a+(b-avg)**2,0)/returns.length;
-
-    let vol = Math.sqrt(variance) * Math.sqrt(252);
-
-    let cagr = Math.pow(series[series.length-1]/series[0], 252/series.length) - 1;
-
-    return {vol, cagr};
+    render();
+    save();
 }
 
 function render(){
 
-    let total = 0;
-    let cost = 0;
-
+    let tbl = document.getElementById("tbl");
     tbl.innerHTML = "";
 
-    pf.forEach((x,i)=>{
+    pf.forEach(x=>{
 
         let v = x.q * x.p;
         let c = x.q * x.b;
-
         let pl = v - c;
-        let perc = c ? (pl/c)*100 : 0;
 
-        total += v;
-        cost += c;
+        let color =
+            x.status === "green" ? "green" :
+            x.status === "yellow" ? "yellow" : "red";
 
         tbl.innerHTML += `
         <tr>
             <td>${x.s}</td>
-            <td>${v.toFixed(2)}</td>
-            <td class="${pl>=0?'profit':'loss'}">${pl.toFixed(2)}</td>
-            <td class="${perc>=0?'profit':'loss'}">${perc.toFixed(2)}%</td>
-            <td><button onclick="del(${i})">X</button></td>
+            <td>${x.p.toFixed(2)}</td>
+            <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
+            <td class="${color}">${x.status}</td>
         </tr>`;
     });
-
-    let pl = total - cost;
-    let perc = cost ? (pl/cost)*100 : 0;
-
-    hist.push(total);
-    if(hist.length > 200) hist.shift();
-
-    let stats = computeStats(hist);
-
-    tot.innerHTML = `💰 Totale: ${total.toFixed(2)}`;
-    plBox.innerHTML = `P/L: <span class="${pl>=0?'profit':'loss'}">${pl.toFixed(2)} (${perc.toFixed(2)}%)</span>`;
-    risk.innerHTML = `Volatilità: ${(stats.vol*100).toFixed(2)}%`;
-    cagr.innerHTML = `CAGR: ${(stats.cagr*100).toFixed(2)}%`;
-
-    draw();
-
-    save();
 }
 
-function draw(){
-
-    if(window.chart) chart.destroy();
-
-    chart = new Chart(equity, {
-        type: "line",
-        data: {
-            labels: hist.map((_,i)=>i),
-            datasets: [{
-                data: hist,
-                borderColor:"#3b82f6",
-                fill:false
-            }]
-        }
-    });
+function save(){
+    localStorage.setItem("pf", JSON.stringify(pf));
 }
-
-function del(i){
-    pf.splice(i,1);
-    render();
-}
-
-async function update(){
-
-    for(let x of pf){
-        x.p = await price(x.s);
-    }
-
-    render();
-}
-
-setInterval(update, 60000);
-
-// refs
-const tbl = document.getElementById("tbl");
-const tot = document.getElementById("tot");
-const plBox = document.getElementById("pl");
-const risk = document.getElementById("risk");
-const cagr = document.getElementById("cagr");
-const equity = document.getElementById("equity");
 
 render();
+
+log("TERMINAL READY");
 
 </script>
 
