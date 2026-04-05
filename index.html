@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quant Portfolio TD</title>
+<title>Smart Quant Portfolio</title>
 
 <style>
 body{
     margin:0;
     font-family:monospace;
-    background:#050914;
+    background:#060b16;
     color:#d1d5db;
 }
 
@@ -69,7 +69,7 @@ td,th{
 
 <div class="container">
 
-<h2>📊 QUANT PORTFOLIO (TwelveData)</h2>
+<h2>🧠 SMART TICKER ENGINE PORTFOLIO</h2>
 
 <div class="card">
 <input id="s" placeholder="TICKER (ENI.MI)">
@@ -86,7 +86,7 @@ td,th{
 <th>ASSET</th>
 <th>PRICE</th>
 <th>P/L</th>
-<th>STATUS</th>
+<th>SOURCE</th>
 </tr>
 </thead>
 <tbody id="tbl"></tbody>
@@ -102,8 +102,9 @@ td,th{
 <script>
 
 let pf = JSON.parse(localStorage.getItem("pf")) || [];
+let cache = {};
 
-const API_KEY = "demo"; // sostituisci con la tua key reale
+const API_KEY = "demo";
 
 function log(msg){
     const t = document.getElementById("term");
@@ -112,34 +113,86 @@ function log(msg){
     t.scrollTop = t.scrollHeight;
 }
 
+function normalize(symbol){
+    return symbol.toUpperCase().trim();
+}
+
+function variants(symbol){
+
+    let s = normalize(symbol);
+
+    let base = s;
+
+    // ENI.MI -> ENI
+    if(s.includes(".")){
+        base = s.split(".")[0];
+    }
+
+    return [
+        s,      // originale
+        base    // pulito
+    ];
+}
+
+async function fetchPrice(symbol){
+
+    const url = `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${API_KEY}`;
+
+    const r = await fetch(url);
+    const j = await r.json();
+
+    const p = parseFloat(j.close);
+
+    if(!p || isNaN(p)) return null;
+
+    return p;
+}
+
 async function price(symbol){
 
-    try{
-        const url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${API_KEY}`;
+    const vars = variants(symbol);
 
-        const r = await fetch(url);
-        const j = await r.json();
+    for(let v of vars){
 
-        const p = parseFloat(j.price);
+        try{
+            log(`TRY ${v}`);
 
-        if(!p){
-            log(`NO DATA ${symbol}`);
-            return {p:0,src:"twelvedata",status:"red"};
+            const p = await fetchPrice(v);
+
+            if(p){
+
+                log(`OK ${symbol} => ${v} = ${p}`);
+
+                cache[symbol] = {
+                    p,
+                    src:v,
+                    t:Date.now()
+                };
+
+                return {
+                    p,
+                    src:v,
+                    status:"green"
+                };
+            }
+
+        }catch(e){
+            log(`FAIL ${v}`);
         }
-
-        log(`OK ${symbol} = ${p}`);
-
-        return {p,src:"twelvedata",status:"green"};
-
-    }catch(e){
-        log(`FAIL ${symbol}`);
-        return {p:0,src:"error",status:"red"};
     }
+
+    log(`NO DATA ${symbol}`);
+
+    return {
+        p:0,
+        src:"none",
+        status:"red"
+    };
 }
 
 async function add(){
 
-    const s = document.getElementById("s").value.toUpperCase().trim();
+    const s = document.getElementById("s").value;
     const q = +document.getElementById("q").value;
     const b = +document.getElementById("b").value;
 
@@ -151,7 +204,9 @@ async function add(){
     const res = await price(s);
 
     pf.push({
-        s,q,b,
+        s,
+        q,
+        b,
         p:res.p,
         src:res.src,
         status:res.status
@@ -206,7 +261,7 @@ function render(){
         </tr>`;
     });
 
-    log(`PORTFOLIO = ${(total-cost).toFixed(2)}`);
+    log(`PORTFOLIO ${(total-cost).toFixed(2)}`);
 }
 
 function save(){
@@ -214,7 +269,7 @@ function save(){
 }
 
 render();
-log("READY (TwelveData mode)");
+log("SMART ENGINE READY");
 
 </script>
 
