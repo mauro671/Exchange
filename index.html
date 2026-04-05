@@ -3,24 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portfolio Terminal</title>
+<title>Quant Portfolio PRO DATA FEED</title>
 
 <style>
 body{
     margin:0;
     font-family:monospace;
-    background:#05070f;
-    color:#cbd5e1;
+    background:#070b14;
+    color:#d1d5db;
 }
 
 .container{
-    max-width:1000px;
+    max-width:1100px;
     margin:auto;
     padding:20px;
 }
 
 .card{
-    background:#0f172a;
+    background:#111827;
     padding:12px;
     border-radius:10px;
     margin:10px 0;
@@ -33,7 +33,11 @@ input,button{
     border:none;
 }
 
-button{background:#2563eb;color:white;cursor:pointer;}
+button{
+    background:#2563eb;
+    color:white;
+    cursor:pointer;
+}
 
 table{
     width:100%;
@@ -42,7 +46,7 @@ table{
 
 td,th{
     padding:6px;
-    border-bottom:1px solid #1e293b;
+    border-bottom:1px solid #1f2937;
     text-align:center;
 }
 
@@ -53,9 +57,9 @@ td,th{
 .terminal{
     background:black;
     color:#22c55e;
-    padding:10px;
-    height:200px;
+    height:180px;
     overflow:auto;
+    padding:10px;
     font-size:12px;
 }
 </style>
@@ -65,10 +69,10 @@ td,th{
 
 <div class="container">
 
-<h2>🧠 TERMINAL MODE PORTFOLIO</h2>
+<h2>📊 PRO DATA FEED PORTFOLIO</h2>
 
 <div class="card">
-<input id="s" placeholder="TICKER">
+<input id="s" placeholder="TICKER (ENI.MI)">
 <input id="q" type="number" placeholder="QTA">
 <input id="b" type="number" placeholder="BUY">
 <button onclick="add()">ADD</button>
@@ -98,6 +102,7 @@ td,th{
 <script>
 
 let pf = JSON.parse(localStorage.getItem("pf")) || [];
+let cache = {};
 
 function log(msg){
     const t = document.getElementById("term");
@@ -106,52 +111,88 @@ function log(msg){
     t.scrollTop = t.scrollHeight;
 }
 
-async function price(s){
+async function price(symbol){
 
+    const s = symbol.toLowerCase().trim();
+
+    // cache 60s
+    if(cache[symbol] && Date.now() - cache[symbol].t < 60000){
+        return cache[symbol];
+    }
+
+    // =====================
+    // 1. STOOQ (PRIMARY)
+    // =====================
     try{
-        log(`FETCH ${s}`);
+        const stooq = s.includes(".mi")
+            ? s.replace(".mi",".it")
+            : s;
 
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`;
-        const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
-
-        if(!r.ok){
-            log(`ERROR HTTP ${s}`);
-            return {p:0,status:"red"};
-        }
-
+        const url = `https://stooq.com/q/l/?s=${stooq}&f=sd2t2ohlcv&h&e=json`;
+        const r = await fetch(url);
         const j = await r.json();
-        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
 
-        if(typeof p !== "number"){
-            log(`FALLBACK ${s}`);
-            return {p:0,status:"yellow"};
+        const p = parseFloat(j?.symbols?.[0]?.close);
+
+        if(p && !isNaN(p)){
+            log(`STOOQ OK ${symbol} = ${p}`);
+
+            cache[symbol] = {p,src:"stooq",t:Date.now(),status:"green"};
+            return cache[symbol];
         }
-
-        log(`OK ${s} = ${p}`);
-        return {p,status:"green"};
 
     }catch(e){
-        log(`FAIL ${s}`);
-        return {p:0,status:"red"};
+        log(`STOOQ FAIL ${symbol}`);
     }
+
+    // =====================
+    // 2. YAHOO (FALLBACK)
+    // =====================
+    try{
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+        const r = await fetch(url);
+        const j = await r.json();
+
+        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+
+        if(p && !isNaN(p)){
+            log(`YAHOO OK ${symbol} = ${p}`);
+
+            cache[symbol] = {p,src:"yahoo",t:Date.now(),status:"yellow"};
+            return cache[symbol];
+        }
+
+    }catch(e){
+        log(`YAHOO FAIL ${symbol}`);
+    }
+
+    // =====================
+    // 3. FALLBACK CACHE
+    // =====================
+    log(`NO DATA ${symbol}`);
+
+    return cache[symbol] || {p:0,src:"none",status:"red"};
 }
 
 async function add(){
 
-    const s = document.getElementById("s").value.toUpperCase();
+    const s = document.getElementById("s").value.toUpperCase().trim();
     const q = +document.getElementById("q").value;
     const b = +document.getElementById("b").value;
 
     if(!s || !q || !b){
-        alert("compila tutto");
+        alert("Compila tutti i campi");
         return;
     }
 
     const res = await price(s);
 
     pf.push({
-        s,q,b,
+        s,
+        q,
+        b,
         p:res.p,
+        src:res.src,
         status:res.status
     });
 
@@ -168,38 +209,49 @@ async function manualUpdate(){
         const res = await price(x.s);
 
         x.p = res.p;
+        x.src = res.src;
         x.status = res.status;
 
-        log(`${x.s} -> ${res.p} (${res.status})`);
+        log(`${x.s} -> ${res.p} (${res.src})`);
     }
 
-    render();
     save();
+    render();
 }
 
 function render(){
 
-    let tbl = document.getElementById("tbl");
+    const tbl = document.getElementById("tbl");
     tbl.innerHTML = "";
+
+    let total = 0;
+    let cost = 0;
 
     pf.forEach(x=>{
 
-        let v = x.q * x.p;
-        let c = x.q * x.b;
-        let pl = v - c;
+        const v = x.q * x.p;
+        const c = x.q * x.b;
 
-        let color =
-            x.status === "green" ? "green" :
-            x.status === "yellow" ? "yellow" : "red";
+        const pl = v - c;
+        const perc = c ? (pl/c)*100 : 0;
+
+        total += v;
+        cost += c;
 
         tbl.innerHTML += `
         <tr>
             <td>${x.s}</td>
             <td>${x.p.toFixed(2)}</td>
             <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
-            <td class="${color}">${x.status}</td>
+            <td class="${
+                x.status==='green'?'green':
+                x.status==='yellow'?'yellow':'red'
+            }">${x.src}</td>
         </tr>`;
     });
+
+    log(`PORTFOLIO VALUE = ${total.toFixed(2)} | P/L ${(total-cost).toFixed(2)}`);
+
 }
 
 function save(){
@@ -207,8 +259,7 @@ function save(){
 }
 
 render();
-
-log("TERMINAL READY");
+log("SYSTEM READY");
 
 </script>
 
