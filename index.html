@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portfolio Zero Fail</title>
+<title>Quant Mode Portfolio</title>
 
 <style>
 body{
     margin:0;
     font-family:monospace;
-    background:#050914;
+    background:#050814;
     color:#d1d5db;
 }
 
@@ -41,6 +41,7 @@ td,th{
 
 .green{color:#22c55e;}
 .red{color:#ef4444;}
+.yellow{color:#eab308;}
 
 .terminal{
     background:black;
@@ -57,7 +58,7 @@ td,th{
 
 <div class="container">
 
-<h2>📊 PORTFOLIO (STABLE MODE)</h2>
+<h2>📊 QUANT MODE (STABLE ENGINE)</h2>
 
 <div class="card">
 <input id="s" placeholder="TICKER (ENI.MI)">
@@ -74,7 +75,7 @@ td,th{
 <th>ASSET</th>
 <th>PRICE</th>
 <th>P/L</th>
-<th>SRC</th>
+<th>STATUS</th>
 </tr>
 </thead>
 <tbody id="tbl"></tbody>
@@ -100,37 +101,39 @@ function log(m){
 }
 
 // =========================
-// NORMALIZZAZIONE
+// NORMALIZER QUANT
 // =========================
 function normalize(s){
-    return s.toLowerCase().trim().replace(".mi",".it");
+    return s.toUpperCase().trim().replace(".MI","");
 }
 
 // =========================
-// STOOQ FETCH (WORKING)
+// PRICE ENGINE (REALISTIC)
 // =========================
-async function fetchPrice(symbol){
+async function fetchYahoo(symbol){
 
     try{
 
-        const url = `https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlcv&h&e=json`;
+        const url =
+        "https://api.allorigins.win/raw?url=" +
+        encodeURIComponent(
+            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`
+        );
 
         const r = await fetch(url);
         const j = await r.json();
 
-        const p = parseFloat(j?.symbols?.[0]?.close);
+        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
 
-        if(p && !isNaN(p)) return p;
+        return (p && !isNaN(p)) ? p : null;
 
-        return null;
-
-    }catch(e){
+    }catch{
         return null;
     }
 }
 
 // =========================
-// SMART PRICE
+// CORE QUANT PRICE
 // =========================
 async function price(symbol){
 
@@ -138,31 +141,44 @@ async function price(symbol){
 
     log(`TRY ${s}`);
 
-    let p = await fetchPrice(s);
+    let p = await fetchYahoo(s);
 
     if(p){
 
         cache[symbol] = {p, t:Date.now()};
+
         log(`OK ${symbol} = ${p}`);
 
-        return {p, src:"stooq", status:"green"};
+        return {
+            p,
+            status:"green",
+            src:"yahoo"
+        };
     }
 
-    // cache fallback
+    // cache fallback (quant rule)
     if(cache[symbol]?.p){
 
         log(`CACHE ${symbol} = ${cache[symbol].p}`);
 
-        return {p:cache[symbol].p, src:"cache", status:"yellow"};
+        return {
+            p:cache[symbol].p,
+            status:"yellow",
+            src:"cache"
+        };
     }
 
     log(`FAIL ${symbol}`);
 
-    return {p:0, src:"none", status:"red"};
+    return {
+        p:0,
+        status:"red",
+        src:"error"
+    };
 }
 
 // =========================
-// PORTFOLIO
+// PORTFOLIO OPS
 // =========================
 async function add(){
 
@@ -175,12 +191,13 @@ async function add(){
         return;
     }
 
-    const res = await price(s);
+    const r = await price(s);
 
     pf.push({
         s,q,b,
-        p:res.p,
-        src:res.src
+        p:r.p,
+        status:r.status,
+        src:r.src
     });
 
     save();
@@ -189,14 +206,15 @@ async function add(){
 
 async function refresh(){
 
-    log("=== REFRESH ===");
+    log("=== QUANT REFRESH ===");
 
     for(let x of pf){
 
-        const res = await price(x.s);
+        const r = await price(x.s);
 
-        x.p = res.p;
-        x.src = res.src;
+        x.p = r.p;
+        x.status = r.status;
+        x.src = r.src;
 
         log(`${x.s} -> ${x.p}`);
     }
@@ -206,15 +224,15 @@ async function refresh(){
 }
 
 // =========================
-// RENDER
+// RENDER ENGINE
 // =========================
 function render(){
 
     const tbl = document.getElementById("tbl");
     tbl.innerHTML = "";
 
-    let total=0;
-    let cost=0;
+    let total = 0;
+    let cost = 0;
 
     pf.forEach(x=>{
 
@@ -230,7 +248,7 @@ function render(){
             <td>${x.s}</td>
             <td>${x.p.toFixed(2)}</td>
             <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
-            <td>${x.src}</td>
+            <td>${x.status}</td>
         </tr>`;
     });
 
@@ -242,7 +260,7 @@ function save(){
 }
 
 render();
-log("READY (STOOQ ENGINE)");
+log("QUANT MODE READY");
 
 </script>
 
