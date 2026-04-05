@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zero Fail Portfolio</title>
+<title>Portfolio Zero Fail</title>
 
 <style>
 body{
@@ -13,13 +13,13 @@ body{
     color:#d1d5db;
 }
 
-.container{max-width:1000px;margin:auto;padding:20px;}
+.container{max-width:900px;margin:auto;padding:20px;}
 
 .card{
     background:#111827;
     padding:12px;
-    border-radius:10px;
     margin:10px 0;
+    border-radius:10px;
 }
 
 input,button{
@@ -41,12 +41,11 @@ td,th{
 
 .green{color:#22c55e;}
 .red{color:#ef4444;}
-.yellow{color:#eab308;}
 
 .terminal{
     background:black;
     color:#22c55e;
-    height:200px;
+    height:180px;
     overflow:auto;
     padding:10px;
     font-size:12px;
@@ -58,14 +57,14 @@ td,th{
 
 <div class="container">
 
-<h2>🧠 ZERO FAIL PORTFOLIO</h2>
+<h2>📊 PORTFOLIO (STABLE MODE)</h2>
 
 <div class="card">
 <input id="s" placeholder="TICKER (ENI.MI)">
 <input id="q" type="number" placeholder="QTA">
 <input id="b" type="number" placeholder="BUY">
 <button onclick="add()">ADD</button>
-<button onclick="manualUpdate()">REFRESH</button>
+<button onclick="refresh()">REFRESH</button>
 </div>
 
 <div class="card">
@@ -75,7 +74,7 @@ td,th{
 <th>ASSET</th>
 <th>PRICE</th>
 <th>P/L</th>
-<th>SOURCE</th>
+<th>SRC</th>
 </tr>
 </thead>
 <tbody id="tbl"></tbody>
@@ -90,104 +89,81 @@ td,th{
 
 <script>
 
-let pf = JSON.parse(localStorage.getItem("pf")) || [];
+let pf = JSON.parse(localStorage.getItem("pf") || "[]");
 let cache = {};
 
-const API_KEY = "demo";
-
-function log(msg){
+function log(m){
     const t = document.getElementById("term");
     const time = new Date().toLocaleTimeString();
-    t.innerHTML += `[${time}] ${msg}<br>`;
+    t.innerHTML += `[${time}] ${m}<br>`;
     t.scrollTop = t.scrollHeight;
 }
 
-// =====================
-// SMART TICKER
-// =====================
-function variants(symbol){
-    const s = symbol.toUpperCase().trim();
-    const base = s.split(".")[0];
-    return [s, base];
+// =========================
+// NORMALIZZAZIONE
+// =========================
+function normalize(s){
+    return s.toLowerCase().trim().replace(".mi",".it");
 }
 
-// =====================
-// DATA SOURCES
-// =====================
-async function yahoo(symbol){
+// =========================
+// STOOQ FETCH (WORKING)
+// =========================
+async function fetchPrice(symbol){
+
     try{
-        const url =
-        "https://api.allorigins.win/raw?url=" +
-        encodeURIComponent(
-            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`
-        );
+
+        const url = `https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlcv&h&e=json`;
 
         const r = await fetch(url);
         const j = await r.json();
 
-        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+        const p = parseFloat(j?.symbols?.[0]?.close);
 
-        return (p && !isNaN(p)) ? p : null;
+        if(p && !isNaN(p)) return p;
 
-    }catch{
+        return null;
+
+    }catch(e){
         return null;
     }
 }
 
+// =========================
+// SMART PRICE
+// =========================
 async function price(symbol){
 
-    const vars = variants(symbol);
+    const s = normalize(symbol);
 
-    // 1. try variants
-    for(let v of vars){
+    log(`TRY ${s}`);
 
-        log(`TRY ${v}`);
+    let p = await fetchPrice(s);
 
-        let p = await yahoo(v);
+    if(p){
 
-        if(p){
+        cache[symbol] = {p, t:Date.now()};
+        log(`OK ${symbol} = ${p}`);
 
-            cache[symbol] = {
-                p,
-                src:v,
-                t:Date.now()
-            };
-
-            log(`OK ${symbol} => ${v} = ${p}`);
-
-            return {
-                p,
-                src:v,
-                status:"green"
-            };
-        }
+        return {p, src:"stooq", status:"green"};
     }
 
-    // 2. cache fallback
+    // cache fallback
     if(cache[symbol]?.p){
 
         log(`CACHE ${symbol} = ${cache[symbol].p}`);
 
-        return {
-            p:cache[symbol].p,
-            src:"cache",
-            status:"yellow"
-        };
+        return {p:cache[symbol].p, src:"cache", status:"yellow"};
     }
 
-    // 3. hard fail
     log(`FAIL ${symbol}`);
 
-    return {
-        p:0,
-        src:"error",
-        status:"red"
-    };
+    return {p:0, src:"none", status:"red"};
 }
 
-// =====================
+// =========================
 // PORTFOLIO
-// =====================
+// =========================
 async function add(){
 
     const s = document.getElementById("s").value;
@@ -204,15 +180,14 @@ async function add(){
     pf.push({
         s,q,b,
         p:res.p,
-        src:res.src,
-        status:res.status
+        src:res.src
     });
 
     save();
     render();
 }
 
-async function manualUpdate(){
+async function refresh(){
 
     log("=== REFRESH ===");
 
@@ -222,22 +197,24 @@ async function manualUpdate(){
 
         x.p = res.p;
         x.src = res.src;
-        x.status = res.status;
 
-        log(`${x.s} -> ${res.p}`);
+        log(`${x.s} -> ${x.p}`);
     }
 
     save();
     render();
 }
 
+// =========================
+// RENDER
+// =========================
 function render(){
 
     const tbl = document.getElementById("tbl");
     tbl.innerHTML = "";
 
-    let total = 0;
-    let cost = 0;
+    let total=0;
+    let cost=0;
 
     pf.forEach(x=>{
 
@@ -265,7 +242,7 @@ function save(){
 }
 
 render();
-log("SYSTEM READY");
+log("READY (STOOQ ENGINE)");
 
 </script>
 
