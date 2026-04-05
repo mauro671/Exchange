@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quant Portfolio PRO DATA FEED</title>
+<title>Quant Portfolio TD</title>
 
 <style>
 body{
     margin:0;
     font-family:monospace;
-    background:#070b14;
+    background:#050914;
     color:#d1d5db;
 }
 
 .container{
-    max-width:1100px;
+    max-width:1000px;
     margin:auto;
     padding:20px;
 }
@@ -57,7 +57,7 @@ td,th{
 .terminal{
     background:black;
     color:#22c55e;
-    height:180px;
+    height:200px;
     overflow:auto;
     padding:10px;
     font-size:12px;
@@ -69,7 +69,7 @@ td,th{
 
 <div class="container">
 
-<h2>📊 PRO DATA FEED PORTFOLIO</h2>
+<h2>📊 QUANT PORTFOLIO (TwelveData)</h2>
 
 <div class="card">
 <input id="s" placeholder="TICKER (ENI.MI)">
@@ -102,7 +102,8 @@ td,th{
 <script>
 
 let pf = JSON.parse(localStorage.getItem("pf")) || [];
-let cache = {};
+
+const API_KEY = "demo"; // sostituisci con la tua key reale
 
 function log(msg){
     const t = document.getElementById("term");
@@ -114,28 +115,28 @@ function log(msg){
 async function price(symbol){
 
     try{
-        const url =
-        "https://api.allorigins.win/raw?url=" +
-        encodeURIComponent(
-            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`
-        );
+        const url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${API_KEY}`;
 
         const r = await fetch(url);
         const j = await r.json();
 
-        const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+        const p = parseFloat(j.price);
 
-        if(!p) throw "no price";
+        if(!p){
+            log(`NO DATA ${symbol}`);
+            return {p:0,src:"twelvedata",status:"red"};
+        }
 
         log(`OK ${symbol} = ${p}`);
 
-        return {p,src:"yahoo",status:"green"};
+        return {p,src:"twelvedata",status:"green"};
 
     }catch(e){
         log(`FAIL ${symbol}`);
-        return {p:0,src:"none",status:"red"};
+        return {p:0,src:"error",status:"red"};
     }
 }
+
 async function add(){
 
     const s = document.getElementById("s").value.toUpperCase().trim();
@@ -143,16 +144,14 @@ async function add(){
     const b = +document.getElementById("b").value;
 
     if(!s || !q || !b){
-        alert("Compila tutti i campi");
+        alert("compila tutto");
         return;
     }
 
     const res = await price(s);
 
     pf.push({
-        s,
-        q,
-        b,
+        s,q,b,
         p:res.p,
         src:res.src,
         status:res.status
@@ -164,7 +163,7 @@ async function add(){
 
 async function manualUpdate(){
 
-    log("=== MANUAL REFRESH ===");
+    log("=== REFRESH ===");
 
     for(let x of pf){
 
@@ -174,7 +173,7 @@ async function manualUpdate(){
         x.src = res.src;
         x.status = res.status;
 
-        log(`${x.s} -> ${res.p} (${res.src})`);
+        log(`${x.s} -> ${res.p}`);
     }
 
     save();
@@ -193,9 +192,7 @@ function render(){
 
         const v = x.q * x.p;
         const c = x.q * x.b;
-
         const pl = v - c;
-        const perc = c ? (pl/c)*100 : 0;
 
         total += v;
         cost += c;
@@ -205,15 +202,11 @@ function render(){
             <td>${x.s}</td>
             <td>${x.p.toFixed(2)}</td>
             <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
-            <td class="${
-                x.status==='green'?'green':
-                x.status==='yellow'?'yellow':'red'
-            }">${x.src}</td>
+            <td>${x.src}</td>
         </tr>`;
     });
 
-    log(`PORTFOLIO VALUE = ${total.toFixed(2)} | P/L ${(total-cost).toFixed(2)}`);
-
+    log(`PORTFOLIO = ${(total-cost).toFixed(2)}`);
 }
 
 function save(){
@@ -221,7 +214,7 @@ function save(){
 }
 
 render();
-log("SYSTEM READY");
+log("READY (TwelveData mode)");
 
 </script>
 
