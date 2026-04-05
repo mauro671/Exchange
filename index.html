@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quant Portfolio</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{margin:0;font-family:system-ui;background:#0a0f1c;color:#e5e7eb;}
+.container{max-width:1200px;margin:auto;padding:20px;}
+.card{background:#121a2b;padding:15px;border-radius:12px;margin:10px 0;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
+input,button{padding:10px;border:none;border-radius:8px;margin:5px;}
+button{background:#3b82f6;color:white;cursor:pointer;}
+.profit{color:#22c55e;} .loss{color:#ef4444;}
+canvas{margin-top:20px;}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>📊 Quant Portfolio</h2>
+
+<div class="card">
+<input id="s" placeholder="Ticker">
+<input id="q" type="number" placeholder="Qty">
+<input id="b" type="number" placeholder="Buy">
+<button onclick="add()">Add</button>
+</div>
+
+<div class="grid">
+<div class="card" id="tot"></div>
+<div class="card" id="sharpe"></div>
+<div class="card" id="vol"></div>
+<div class="card" id="dd"></div>
+<div class="card" id="cagr"></div>
+</div>
+
+<div class="card"><canvas id="equity"></canvas></div>
+<div class="card"><canvas id="drawdown"></canvas></div>
+
+</div>
+
+<script>
+
+let pf = JSON.parse(localStorage.getItem("pf"))||[];
+let hist = JSON.parse(localStorage.getItem("hist"))||[];
+
+async function price(s){
+    try{
+        let url=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`;
+        let r=await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent(url));
+        let j=await r.json();
+        return j.quoteResponse.result[0]?.regularMarketPrice||0;
+    }catch{return 0;}
+}
+
+async function add(){
+    let p=await price(s.value.toUpperCase());
+    pf.push({s:s.value.toUpperCase(),q:+q.value,b:+b.value,p});
+    save(); render();
+}
+
+function save(){
+    localStorage.setItem("pf",JSON.stringify(pf));
+    localStorage.setItem("hist",JSON.stringify(hist));
+}
+
+function computeMetrics(series){
+
+    if(series.length<2) return {};
+
+    let returns=[];
+    for(let i=1;i<series.length;i++){
+        returns.push(Math.log(series[i]/series[i-1]));
+    }
+
+    let avg=returns.reduce((a,b)=>a+b,0)/returns.length;
+    let variance=returns.reduce((a,b)=>a+(b-avg)**2,0)/returns.length;
+    let vol=Math.sqrt(variance)*Math.sqrt(252);
+
+    let sharpe=(avg*252)/(vol||1);
+
+    let peak=series[0], maxDD=0;
+    let ddSeries=[];
+
+    series.forEach(v=>{
+        if(v>peak) peak=v;
+        let dd=(v-peak)/peak;
+        ddSeries.push(dd);
+        if(dd<maxDD) maxDD=dd;
+    });
+
+    let cagr = Math.pow(series[series.length-1]/series[0], 252/series.length)-1;
+
+    return {vol,sharpe,maxDD,cagr,ddSeries};
+}
+
+function render(){
+
+    let total=0;
+    pf.forEach(x=>{
+        total+=x.q*x.p;
+    });
+
+    hist.push(total);
+    if(hist.length>200) hist.shift();
+
+    let m=computeMetrics(hist);
+
+    tot.innerHTML=`💰 ${total.toFixed(2)}`;
+    sharpe.innerHTML=`Sharpe: ${(m.sharpe||0).toFixed(2)}`;
+    vol.innerHTML=`Vol: ${(m.vol*100||0).toFixed(2)}%`;
+    dd.innerHTML=`Max DD: ${(m.maxDD*100||0).toFixed(2)}%`;
+    cagr.innerHTML=`CAGR: ${(m.cagr*100||0).toFixed(2)}%`;
+
+    draw(hist,m.ddSeries||[]);
+
+    save();
+}
+
+function draw(eq,dd){
+    if(window.eqChart) eqChart.destroy();
+    if(window.ddChart) ddChart.destroy();
+
+    eqChart=new Chart(equity,{
+        type:"line",
+        data:{labels:eq.map((_,i)=>i),datasets:[{data:eq}]}
+    });
+
+    ddChart=new Chart(drawdown,{
+        type:"line",
+        data:{labels:dd.map((_,i)=>i),datasets:[{data:dd}]}
+    });
+}
+
+async function update(){
+    for(let x of pf){
+        x.p=await price(x.s);
+    }
+    render();
+}
+
+setInterval(update,60000);
+
+render();
+
+</script>
+
+</body>
+</html>
