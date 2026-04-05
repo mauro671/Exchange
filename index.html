@@ -3,148 +3,286 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quant Portfolio</title>
+<title>Quant Portfolio PRO</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body{margin:0;font-family:system-ui;background:#0a0f1c;color:#e5e7eb;}
-.container{max-width:1200px;margin:auto;padding:20px;}
-.card{background:#121a2b;padding:15px;border-radius:12px;margin:10px 0;}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
-input,button{padding:10px;border:none;border-radius:8px;margin:5px;}
-button{background:#3b82f6;color:white;cursor:pointer;}
-.profit{color:#22c55e;} .loss{color:#ef4444;}
-canvas{margin-top:20px;}
+body{
+    margin:0;
+    font-family:system-ui;
+    background:#0b1220;
+    color:#e5e7eb;
+}
+
+.container{
+    max-width:1100px;
+    margin:auto;
+    padding:20px;
+}
+
+.card{
+    background:#121a2b;
+    padding:15px;
+    border-radius:12px;
+    margin:10px 0;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:10px;
+}
+
+input,button{
+    padding:10px;
+    border:none;
+    border-radius:8px;
+    margin:5px;
+}
+
+button{
+    background:#3b82f6;
+    color:white;
+    cursor:pointer;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+td,th{
+    padding:8px;
+    text-align:center;
+    border-bottom:1px solid #1f2a44;
+}
+
+.profit{color:#22c55e;}
+.loss{color:#ef4444;}
+
+.toast{
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    background:#111;
+    padding:10px;
+    border-radius:8px;
+}
 </style>
 </head>
 
 <body>
+
 <div class="container">
 
-<h2>📊 Quant Portfolio</h2>
+<h2>📊 Quant Portfolio PRO</h2>
 
 <div class="card">
-<input id="s" placeholder="Ticker">
-<input id="q" type="number" placeholder="Qty">
-<input id="b" type="number" placeholder="Buy">
-<button onclick="add()">Add</button>
+    <input id="s" placeholder="Ticker (ENI.MI)">
+    <input id="q" type="number" placeholder="Quantità">
+    <input id="b" type="number" placeholder="Prezzo acquisto">
+    <button onclick="add()">Aggiungi</button>
 </div>
 
 <div class="grid">
-<div class="card" id="tot"></div>
-<div class="card" id="sharpe"></div>
-<div class="card" id="vol"></div>
-<div class="card" id="dd"></div>
-<div class="card" id="cagr"></div>
+    <div class="card" id="tot"></div>
+    <div class="card" id="pl"></div>
+    <div class="card" id="risk"></div>
+    <div class="card" id="cagr"></div>
 </div>
 
-<div class="card"><canvas id="equity"></canvas></div>
-<div class="card"><canvas id="drawdown"></canvas></div>
+<div class="card">
+    <canvas id="equity"></canvas>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Ticker</th>
+                <th>Valore</th>
+                <th>P/L</th>
+                <th>%</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="tbl"></tbody>
+    </table>
+</div>
 
 </div>
 
 <script>
 
-let pf = JSON.parse(localStorage.getItem("pf"))||[];
-let hist = JSON.parse(localStorage.getItem("hist"))||[];
+let pf = JSON.parse(localStorage.getItem("pf")) || [];
+let hist = JSON.parse(localStorage.getItem("hist")) || [];
+let cache = {};
 
-async function price(s){
+async function price(symbol){
+
     try{
-        let url=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`;
-        let r=await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent(url));
-        let j=await r.json();
-        return j.quoteResponse.result[0]?.regularMarketPrice||0;
-    }catch{return 0;}
+        // cache 60s
+        if(cache[symbol] && Date.now() - cache[symbol].t < 60000){
+            return cache[symbol].v;
+        }
+
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+        const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
+        const j = await r.json();
+
+        let p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+
+        if(typeof p !== "number") p = 0;
+
+        cache[symbol] = {v:p, t:Date.now()};
+        return p;
+
+    }catch(e){
+        console.log("price error", e);
+        return 0;
+    }
 }
 
 async function add(){
-    let p=await price(s.value.toUpperCase());
-    pf.push({s:s.value.toUpperCase(),q:+q.value,b:+b.value,p});
-    save(); render();
+
+    const sEl = document.getElementById("s");
+    const qEl = document.getElementById("q");
+    const bEl = document.getElementById("b");
+
+    const s = sEl.value.toUpperCase().trim();
+    const q = parseFloat(qEl.value);
+    const b = parseFloat(bEl.value);
+
+    if(!s || !q || !b){
+        alert("Compila tutti i campi");
+        return;
+    }
+
+    let p = await price(s);
+
+    if(!p) p = b;
+
+    pf.push({s,q,b,p});
+
+    sEl.value = "";
+    qEl.value = "";
+    bEl.value = "";
+
+    save();
+    render();
 }
 
 function save(){
-    localStorage.setItem("pf",JSON.stringify(pf));
-    localStorage.setItem("hist",JSON.stringify(hist));
+    localStorage.setItem("pf", JSON.stringify(pf));
+    localStorage.setItem("hist", JSON.stringify(hist));
 }
 
-function computeMetrics(series){
+function computeStats(series){
 
-    if(series.length<2) return {};
+    if(series.length < 2) return {vol:0, cagr:0};
 
-    let returns=[];
+    let returns = [];
     for(let i=1;i<series.length;i++){
         returns.push(Math.log(series[i]/series[i-1]));
     }
 
-    let avg=returns.reduce((a,b)=>a+b,0)/returns.length;
-    let variance=returns.reduce((a,b)=>a+(b-avg)**2,0)/returns.length;
-    let vol=Math.sqrt(variance)*Math.sqrt(252);
+    let avg = returns.reduce((a,b)=>a+b,0)/returns.length;
+    let variance = returns.reduce((a,b)=>a+(b-avg)**2,0)/returns.length;
 
-    let sharpe=(avg*252)/(vol||1);
+    let vol = Math.sqrt(variance) * Math.sqrt(252);
 
-    let peak=series[0], maxDD=0;
-    let ddSeries=[];
+    let cagr = Math.pow(series[series.length-1]/series[0], 252/series.length) - 1;
 
-    series.forEach(v=>{
-        if(v>peak) peak=v;
-        let dd=(v-peak)/peak;
-        ddSeries.push(dd);
-        if(dd<maxDD) maxDD=dd;
-    });
-
-    let cagr = Math.pow(series[series.length-1]/series[0], 252/series.length)-1;
-
-    return {vol,sharpe,maxDD,cagr,ddSeries};
+    return {vol, cagr};
 }
 
 function render(){
 
-    let total=0;
-    pf.forEach(x=>{
-        total+=x.q*x.p;
+    let total = 0;
+    let cost = 0;
+
+    tbl.innerHTML = "";
+
+    pf.forEach((x,i)=>{
+
+        let v = x.q * x.p;
+        let c = x.q * x.b;
+
+        let pl = v - c;
+        let perc = c ? (pl/c)*100 : 0;
+
+        total += v;
+        cost += c;
+
+        tbl.innerHTML += `
+        <tr>
+            <td>${x.s}</td>
+            <td>${v.toFixed(2)}</td>
+            <td class="${pl>=0?'profit':'loss'}">${pl.toFixed(2)}</td>
+            <td class="${perc>=0?'profit':'loss'}">${perc.toFixed(2)}%</td>
+            <td><button onclick="del(${i})">X</button></td>
+        </tr>`;
     });
 
+    let pl = total - cost;
+    let perc = cost ? (pl/cost)*100 : 0;
+
     hist.push(total);
-    if(hist.length>200) hist.shift();
+    if(hist.length > 200) hist.shift();
 
-    let m=computeMetrics(hist);
+    let stats = computeStats(hist);
 
-    tot.innerHTML=`💰 ${total.toFixed(2)}`;
-    sharpe.innerHTML=`Sharpe: ${(m.sharpe||0).toFixed(2)}`;
-    vol.innerHTML=`Vol: ${(m.vol*100||0).toFixed(2)}%`;
-    dd.innerHTML=`Max DD: ${(m.maxDD*100||0).toFixed(2)}%`;
-    cagr.innerHTML=`CAGR: ${(m.cagr*100||0).toFixed(2)}%`;
+    tot.innerHTML = `💰 Totale: ${total.toFixed(2)}`;
+    plBox.innerHTML = `P/L: <span class="${pl>=0?'profit':'loss'}">${pl.toFixed(2)} (${perc.toFixed(2)}%)</span>`;
+    risk.innerHTML = `Volatilità: ${(stats.vol*100).toFixed(2)}%`;
+    cagr.innerHTML = `CAGR: ${(stats.cagr*100).toFixed(2)}%`;
 
-    draw(hist,m.ddSeries||[]);
+    draw();
 
     save();
 }
 
-function draw(eq,dd){
-    if(window.eqChart) eqChart.destroy();
-    if(window.ddChart) ddChart.destroy();
+function draw(){
 
-    eqChart=new Chart(equity,{
-        type:"line",
-        data:{labels:eq.map((_,i)=>i),datasets:[{data:eq}]}
-    });
+    if(window.chart) chart.destroy();
 
-    ddChart=new Chart(drawdown,{
-        type:"line",
-        data:{labels:dd.map((_,i)=>i),datasets:[{data:dd}]}
+    chart = new Chart(equity, {
+        type: "line",
+        data: {
+            labels: hist.map((_,i)=>i),
+            datasets: [{
+                data: hist,
+                borderColor:"#3b82f6",
+                fill:false
+            }]
+        }
     });
 }
 
-async function update(){
-    for(let x of pf){
-        x.p=await price(x.s);
-    }
+function del(i){
+    pf.splice(i,1);
     render();
 }
 
-setInterval(update,60000);
+async function update(){
+
+    for(let x of pf){
+        x.p = await price(x.s);
+    }
+
+    render();
+}
+
+setInterval(update, 60000);
+
+// refs
+const tbl = document.getElementById("tbl");
+const tot = document.getElementById("tot");
+const plBox = document.getElementById("pl");
+const risk = document.getElementById("risk");
+const cagr = document.getElementById("cagr");
+const equity = document.getElementById("equity");
 
 render();
 
