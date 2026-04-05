@@ -113,67 +113,29 @@ function log(msg){
 
 async function price(symbol){
 
-    const s = symbol.toLowerCase().trim();
-
-    // cache 60s
-    if(cache[symbol] && Date.now() - cache[symbol].t < 60000){
-        return cache[symbol];
-    }
-
-    // =====================
-    // 1. STOOQ (PRIMARY)
-    // =====================
     try{
-        const stooq = s.includes(".mi")
-            ? s.replace(".mi",".it")
-            : s;
+        const url =
+        "https://api.allorigins.win/raw?url=" +
+        encodeURIComponent(
+            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`
+        );
 
-        const url = `https://stooq.com/q/l/?s=${stooq}&f=sd2t2ohlcv&h&e=json`;
-        const r = await fetch(url);
-        const j = await r.json();
-
-        const p = parseFloat(j?.symbols?.[0]?.close);
-
-        if(p && !isNaN(p)){
-            log(`STOOQ OK ${symbol} = ${p}`);
-
-            cache[symbol] = {p,src:"stooq",t:Date.now(),status:"green"};
-            return cache[symbol];
-        }
-
-    }catch(e){
-        log(`STOOQ FAIL ${symbol}`);
-    }
-
-    // =====================
-    // 2. YAHOO (FALLBACK)
-    // =====================
-    try{
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
         const r = await fetch(url);
         const j = await r.json();
 
         const p = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
 
-        if(p && !isNaN(p)){
-            log(`YAHOO OK ${symbol} = ${p}`);
+        if(!p) throw "no price";
 
-            cache[symbol] = {p,src:"yahoo",t:Date.now(),status:"yellow"};
-            return cache[symbol];
-        }
+        log(`OK ${symbol} = ${p}`);
+
+        return {p,src:"yahoo",status:"green"};
 
     }catch(e){
-        log(`YAHOO FAIL ${symbol}`);
+        log(`FAIL ${symbol}`);
+        return {p:0,src:"none",status:"red"};
     }
-
-    // =====================
-    // 3. FALLBACK CACHE
-    // =====================
-    log(`NO DATA ${symbol}`);
-
-    return cache[symbol] || {p:0,src:"none",status:"red"};
 }
-
 async function add(){
 
     const s = document.getElementById("s").value.toUpperCase().trim();
